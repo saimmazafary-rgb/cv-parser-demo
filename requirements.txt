@@ -1,0 +1,7 @@
+# Core demo runs on the standard library alone (.txt / .html inputs).
+# Install these to enable the remaining formats:
+pdfplumber>=0.11      # PDF text extraction
+python-docx>=1.1      # DOCX
+beautifulsoup4>=4.12  # cleaner HTML parsing
+pytesseract>=0.3.10   # OCR for JPG / scanned CVs (needs the Tesseract binary)
+Pillow>=10.0          # image loading for OCR

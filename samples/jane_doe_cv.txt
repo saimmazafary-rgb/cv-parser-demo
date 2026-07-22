@@ -1,0 +1,30 @@
+Jane Doe
+Senior Product Designer
+
+jane.doe@example.com
++965 5012 3456
+linkedin.com/in/janedoe
+https://janedoe.design
+
+Summary
+Product designer with 8 years of experience shipping B2B SaaS and e-commerce
+products. Focused on research-driven UX and measurable conversion improvements.
+
+Experience
+Lead Product Designer — BrightCart (2021 - Present)
+Owned checkout redesign that lifted mobile conversion from 1.9% to 3.5%.
+
+Product Designer — Nimbus Software (2017 - 2021)
+Built the design system used across 12 internal tools.
+
+Education
+BSc Computer Science — Kuwait University (2016)
+
+Skills
+Figma, UX Research, Prototyping, Design Systems, HTML, CSS, Usability Testing
+
+Languages
+English, Arabic
+
+Certifications
+Nielsen Norman Group UX Certification

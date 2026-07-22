@@ -1,0 +1,63 @@
+[
+  {
+    "id": "offline_1784747797_0",
+    "fileName": "jane_doe_cv.txt",
+    "fileSize": "757.0 B",
+    "fileType": "Plain Text",
+    "text": "Jane Doe\nSenior Product Designer\n\njane.doe@example.com\n+965 5012 3456\nlinkedin.com/in/janedoe\nhttps://janedoe.design\n\nSummary\nProduct designer with 8 years of experience shipping B2B SaaS and e-commerce\nproducts. Focused on research-driven UX and measurable conversion improvements.\n\nExperience\nLead Product Designer — BrightCart (2021 - Present)\nOwned checkout redesign that lifted mobile conversion from 1.9% to 3.5%.\n\nProduct Designer — Nimbus Software (2017 - 2021)\nBuilt the design system used across 12 internal tools.\n\nEducation\nBSc Computer Science — Kuwait University (2016)\n\nSkills\nFigma, UX Research, Prototyping, Design Systems, HTML, CSS, Usability Testing\n\nLanguages\nEnglish, Arabic\n\nCertifications\nNielsen Norman Group UX Certification\n",
+    "status": "success",
+    "parsedData": {
+      "personalDetails": {
+        "name": "Jane Doe",
+        "position": null,
+        "email": "jane.doe@example.com",
+        "phone": "+965 5012 3456",
+        "city": null,
+        "country": null,
+        "linkedin": "linkedin.com/in/janedoe",
+        "website": "https://janedoe.design",
+        "religion": null,
+        "ethnicity": null,
+        "smokingStatus": null,
+        "militaryService": null,
+        "isArab": null,
+        "passportNo": null,
+        "passportExpiry": null,
+        "civilId": null,
+        "visaNumber": null,
+        "visaExpiry": null,
+        "drivingLicense": null
+      },
+      "summary": "Product designer with 8 years of experience shipping B2B SaaS and e-commerce\nproducts. Focused on research-driven UX and measurable conversion improvements.",
+      "workExperience": [],
+      "education": [],
+      "skills": [
+        {
+          "category": "General",
+          "skills": [
+            "Figma",
+            "UX Research",
+            "Prototyping",
+            "Design Systems",
+            "HTML",
+            "CSS",
+            "Usability Testing"
+          ],
+          "yearsExperience": null,
+          "proficiency": null
+        }
+      ],
+      "languages": [],
+      "projects": [],
+      "certifications": [],
+      "preferences": {
+        "preferredJobTitle": null,
+        "expectedSalary": null,
+        "salaryCurrency": null,
+        "availabilityDate": null
+      }
+    },
+    "selected": false,
+    "onboarded": false
+  }
+]
