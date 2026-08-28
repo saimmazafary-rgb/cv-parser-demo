@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "gemini-media": {
+      "command": "python3",
+      "args": ["${workspaceFolder}/tools/gemini_mcp.py"],
+      "env": {
+        "GEMINI_API_KEY": "${GEMINI_API_KEY}",
+        "GEMINI_MODEL": "gemini-2.5-pro"
+      }
+    }
+  }
+}
