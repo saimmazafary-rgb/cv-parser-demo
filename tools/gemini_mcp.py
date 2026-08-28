@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
-"""Minimal stdio MCP server exposing Gemini Pro image/video analysis.
+"""Minimal stdio MCP server exposing Gemini image/video understanding and
+generation to Claude Code.
 
 Standard library only. Reads GEMINI_API_KEY (or GOOGLE_API_KEY) from the
-environment; the model defaults to gemini-2.5-pro and can be overridden with
-GEMINI_MODEL.
+environment. Models default to gemini-2.5-pro (understanding),
+gemini-3-pro-image-preview (image generation) and veo-3.1-generate-preview
+(video generation); override with GEMINI_MODEL / GEMINI_IMAGE_MODEL /
+GEMINI_VIDEO_MODEL.
 
 Tools:
-  gemini_analyze_image  - inline-uploads an image and asks Gemini about it
-  gemini_analyze_video  - uploads a video via the Files API, waits for it to
-                          finish processing, then asks Gemini about it
+  gemini_analyze_image   - inline-uploads an image and asks Gemini about it
+  gemini_analyze_video   - uploads a video via the Files API, waits for it to
+                           finish processing, then asks Gemini about it
+  gemini_generate_image  - text-to-image, or image editing when input images
+                           are supplied; writes the result to disk
+  gemini_generate_video  - text-to-video (or image-to-video) with Veo; polls
+                           the long-running operation and downloads the file
 """
 
 import base64
@@ -22,6 +29,8 @@ import urllib.request
 
 API_ROOT = "https://generativelanguage.googleapis.com"
 DEFAULT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-pro")
+IMAGE_MODEL = os.environ.get("GEMINI_IMAGE_MODEL", "gemini-3-pro-image-preview")
+VIDEO_MODEL = os.environ.get("GEMINI_VIDEO_MODEL", "veo-3.1-generate-preview")
 # Anything larger than this goes through the Files API instead of inline bytes.
 INLINE_LIMIT = 15 * 1024 * 1024
 
@@ -139,6 +148,131 @@ def analyze(args, kind):
     return generate(parts, args.get("model") or DEFAULT_MODEL)
 
 
+def resolve_out(path, default_ext):
+    path = os.path.expanduser(path)
+    if not os.path.splitext(path)[1]:
+        path += default_ext
+    parent = os.path.dirname(os.path.abspath(path))
+    os.makedirs(parent, exist_ok=True)
+    return path
+
+
+def generate_image(args):
+    """Text-to-image, or editing when input_images are given."""
+    parts = [
+        media_part(p, "image/png") for p in (args.get("input_images") or [])
+    ]
+    parts.append({"text": args["prompt"]})
+    model = args.get("model") or IMAGE_MODEL
+    body = {
+        "contents": [{"parts": parts}],
+        "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
+    }
+    if args.get("aspect_ratio"):
+        body["generationConfig"]["imageConfig"] = {
+            "aspectRatio": args["aspect_ratio"]
+        }
+    result, _ = request(
+        f"{API_ROOT}/v1beta/models/{model}:generateContent?key={api_key()}",
+        data=body,
+    )
+    candidates = result.get("candidates") or []
+    if not candidates:
+        raise RuntimeError(f"No candidates returned: {json.dumps(result)[:1000]}")
+
+    written, notes = [], []
+    out = resolve_out(args["out_path"], ".png")
+    stem, ext = os.path.splitext(out)
+    for part in candidates[0].get("content", {}).get("parts", []):
+        blob = part.get("inlineData") or part.get("inline_data")
+        if blob:
+            target = out if not written else f"{stem}_{len(written) + 1}{ext}"
+            with open(target, "wb") as fh:
+                fh.write(base64.b64decode(blob["data"]))
+            written.append(target)
+        elif part.get("text"):
+            notes.append(part["text"].strip())
+    if not written:
+        raise RuntimeError(
+            "Model returned no image. Text was: " + (" ".join(notes) or "(none)")
+        )
+    lines = ["Wrote " + ", ".join(written)]
+    if notes:
+        lines.append("Model note: " + " ".join(notes))
+    return "\n".join(lines)
+
+
+def generate_video(args, poll_timeout=900):
+    """Veo text-to-video / image-to-video via the long-running operation API."""
+    model = args.get("model") or VIDEO_MODEL
+    instance = {"prompt": args["prompt"]}
+    if args.get("input_image"):
+        part = media_part(args["input_image"], "image/png")
+        blob = part.get("inline_data")
+        if not blob:
+            raise RuntimeError("Seed image is too large to send inline")
+        instance["image"] = {
+            "bytesBase64Encoded": blob["data"],
+            "mimeType": blob["mime_type"],
+        }
+    parameters = {}
+    for key, field in (("aspect_ratio", "aspectRatio"),
+                       ("negative_prompt", "negativePrompt"),
+                       ("resolution", "resolution")):
+        if args.get(key):
+            parameters[field] = args[key]
+
+    operation, _ = request(
+        f"{API_ROOT}/v1beta/models/{model}:predictLongRunning?key={api_key()}",
+        data={"instances": [instance], "parameters": parameters},
+    )
+    name = operation.get("name")
+    if not name:
+        raise RuntimeError(f"No operation returned: {json.dumps(operation)[:1000]}")
+
+    deadline = time.time() + poll_timeout
+    while not operation.get("done"):
+        if time.time() > deadline:
+            raise RuntimeError(
+                f"Video still rendering after {poll_timeout}s. Operation: {name}"
+            )
+        time.sleep(10)
+        operation, _ = request(f"{API_ROOT}/v1beta/{name}?key={api_key()}")
+    if operation.get("error"):
+        raise RuntimeError(f"Veo failed: {json.dumps(operation['error'])[:1000]}")
+
+    response = operation.get("response", {})
+    samples = (
+        response.get("generateVideoResponse", {}).get("generatedSamples")
+        or response.get("generatedSamples")
+        or response.get("videos")
+        or []
+    )
+    if not samples:
+        raise RuntimeError(f"No video in response: {json.dumps(response)[:1000]}")
+
+    out = resolve_out(args["out_path"], ".mp4")
+    stem, ext = os.path.splitext(out)
+    written = []
+    for sample in samples:
+        video = sample.get("video", sample)
+        target = out if not written else f"{stem}_{len(written) + 1}{ext}"
+        if video.get("bytesBase64Encoded"):
+            data = base64.b64decode(video["bytesBase64Encoded"])
+        else:
+            uri = video.get("uri") or video.get("gcsUri")
+            if not uri:
+                raise RuntimeError(f"Sample has no video data: {json.dumps(sample)[:500]}")
+            sep = "&" if "?" in uri else "?"
+            req = urllib.request.Request(f"{uri}{sep}alt=media&key={api_key()}")
+            with urllib.request.urlopen(req) as resp:
+                data = resp.read()
+        with open(target, "wb") as fh:
+            fh.write(data)
+        written.append(target)
+    return "Wrote " + ", ".join(written)
+
+
 PATH_SCHEMA = {
     "type": "object",
     "properties": {
@@ -168,6 +302,74 @@ TOOLS = [
         ),
         "inputSchema": PATH_SCHEMA,
     },
+    {
+        "name": "gemini_generate_image",
+        "description": (
+            "Generate an image from a text prompt with Gemini's image model and "
+            "save it to out_path. Pass input_images to edit, restyle, or combine "
+            "existing images instead of starting from scratch."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "What to generate, or how to edit the inputs.",
+                },
+                "out_path": {
+                    "type": "string",
+                    "description": "Where to write the PNG. Extra images get _2, _3 suffixes.",
+                },
+                "input_images": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional local image paths to edit or use as reference.",
+                },
+                "aspect_ratio": {
+                    "type": "string",
+                    "description": 'Optional, e.g. "1:1", "16:9", "9:16".',
+                },
+                "model": {"type": "string", "description": f"Default {IMAGE_MODEL}."},
+            },
+            "required": ["prompt", "out_path"],
+        },
+    },
+    {
+        "name": "gemini_generate_video",
+        "description": (
+            "Generate a video from a text prompt (or animate a still image) with "
+            "Veo and save it to out_path. Takes a few minutes: the call blocks "
+            "while polling. Requires an API key with billing enabled."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "Scene description, including camera and audio cues.",
+                },
+                "out_path": {
+                    "type": "string",
+                    "description": "Where to write the MP4.",
+                },
+                "input_image": {
+                    "type": "string",
+                    "description": "Optional local image to animate (image-to-video).",
+                },
+                "negative_prompt": {"type": "string", "description": "What to avoid."},
+                "aspect_ratio": {
+                    "type": "string",
+                    "description": 'Optional, e.g. "16:9" or "9:16".',
+                },
+                "resolution": {
+                    "type": "string",
+                    "description": 'Optional, e.g. "720p" or "1080p".',
+                },
+                "model": {"type": "string", "description": f"Default {VIDEO_MODEL}."},
+            },
+            "required": ["prompt", "out_path"],
+        },
+    },
 ]
 
 
@@ -191,6 +393,10 @@ def handle(message):
             text = analyze(args, "image")
         elif name == "gemini_analyze_video":
             text = analyze(args, "video")
+        elif name == "gemini_generate_image":
+            text = generate_image(args)
+        elif name == "gemini_generate_video":
+            text = generate_video(args)
         else:
             raise RuntimeError(f"Unknown tool: {name}")
         return {"content": [{"type": "text", "text": text}]}

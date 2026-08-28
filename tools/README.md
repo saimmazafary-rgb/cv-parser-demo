@@ -1,8 +1,13 @@
-# Gemini Pro media tool for Claude Code
+# Gemini media tools for Claude Code
 
 `gemini_mcp.py` is a small stdio [MCP](https://modelcontextprotocol.io) server
-that lets Claude Code send local **images and videos** to Gemini Pro and read
-back the answer. Standard library only — no pip install.
+that lets Claude Code **generate** images and videos with Gemini and Veo, and
+**analyze** local images and videos. Standard library only — no pip install.
+
+> **A Google AI Pro subscription is not API access.** The subscription covers
+> the Gemini app; this server talks to the Gemini API, which is billed against
+> an AI Studio key. Image generation and understanding have a free tier; **Veo
+> video generation requires billing enabled on the key.**
 
 ## Setup
 
@@ -27,21 +32,34 @@ claude mcp add gemini-media --scope user \
 
 ## Tools
 
-| Tool | Use |
-|------|-----|
-| `gemini_analyze_image` | png / jpg / webp / gif / heic — OCR, screenshots, charts, scanned CVs |
-| `gemini_analyze_video` | mp4 / mov / webm / … — summarize, transcribe, describe what happens |
+| Tool | Use | Default model |
+|------|-----|---------------|
+| `gemini_generate_image` | text→image, or edit/restyle/combine images you pass in | `gemini-3-pro-image-preview` |
+| `gemini_generate_video` | text→video, or animate a still image | `veo-3.1-generate-preview` |
+| `gemini_analyze_image` | OCR, screenshots, charts, scanned CVs | `gemini-2.5-pro` |
+| `gemini_analyze_video` | summarize, transcribe, describe what happens | `gemini-2.5-pro` |
 
-Both take `path` (local file), `prompt`, and optional `model`
-(default `gemini-2.5-pro`, overridable with `GEMINI_MODEL`).
+Every tool takes an optional `model`; the defaults come from `GEMINI_IMAGE_MODEL`,
+`GEMINI_VIDEO_MODEL`, and `GEMINI_MODEL`. Generation tools take `prompt` and
+`out_path` (extension optional — `.png`/`.mp4` is added, and parent directories
+are created). Analysis tools take `path` and `prompt`.
 
 Just ask in plain language once the server is connected:
 
+> Generate a 16:9 hero image of a desk with scattered CVs, save it to `assets/hero.png`.
+> Take `assets/hero.png` and make the lighting warmer.
+> Make a 9:16 video of the camera slowly pushing in on that desk, save to `assets/hero.mp4`.
 > Use Gemini to read the text out of `samples/scan.jpg`.
-> Use Gemini to summarize what happens in `~/Desktop/demo.mp4`.
 
 ## How it works
 
+- **Image generation** is one `generateContent` call with
+  `responseModalities: ["TEXT", "IMAGE"]`; returned `inlineData` parts are
+  base64-decoded straight to disk. Passing `input_images` puts them in the same
+  request, which is how editing works — there is no separate edit endpoint.
+- **Video generation** posts to `:predictLongRunning`, then polls the operation
+  every 10 s (up to 15 min) and downloads the finished file. Expect a few
+  minutes per clip; the tool call blocks for that whole time.
 - Files at or under 15 MB are sent inline as base64.
 - Larger files (most videos) go through the Gemini **Files API** with a
   resumable upload; the server then polls until the file leaves `PROCESSING`
